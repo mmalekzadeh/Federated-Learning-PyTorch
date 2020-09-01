@@ -60,5 +60,15 @@ def args_parser():
                         help='rounds of early stopping')
     parser.add_argument('--verbose', type=int, default=1, help='verbose')
     parser.add_argument('--seed', type=int, default=1, help='random seed')
+
+    ####
+    parser.add_argument('--withDP', type=int, default=0, help='WithDP')
+    parser.add_argument('--max_grad_norm', type=float, default=.1, help='MAX_GRAD_NORM')
+    parser.add_argument('--noise_multiplier', type=float, default=.1, help='NOISE_MULTIPLIER')
+    parser.add_argument('--delta', type=float, default=.1, help='DELTA')
+    parser.add_argument('--virtual_batch_size', type=int, default=10, help='VIRTUAL_BATCH_SIZE')
+    
+    ####
+
     args = parser.parse_args()
     return args

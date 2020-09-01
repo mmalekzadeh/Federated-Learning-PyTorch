@@ -5,6 +5,8 @@
 import torch
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
+from opacus import PrivacyEngine
+
 
 
 class DatasetSplit(Dataset):
@@ -24,7 +26,8 @@ class DatasetSplit(Dataset):
 
 
 class LocalUpdate(object):
-    def __init__(self, args, dataset, idxs, logger):
+    def __init__(self, args, dataset, idx, idxs, logger):
+        self.idx = idx
         self.args = args
         self.logger = logger
         self.trainloader, self.validloader, self.testloader = self.train_val_test(
@@ -63,6 +66,20 @@ class LocalUpdate(object):
         elif self.args.optimizer == 'adam':
             optimizer = torch.optim.Adam(model.parameters(), lr=self.args.lr,
                                          weight_decay=1e-4)
+        #### Moh ####
+        if self.args.withDP:
+            privacy_engine = PrivacyEngine(
+                model,
+                batch_size=self.args.virtual_batch_size,
+                sample_size=len(self.trainloader.dataset),
+                alphas=[1 + x / 10.0 for x in range(1, 100)] + list(range(12, 64)),
+                noise_multiplier=self.args.noise_multiplier,
+                max_grad_norm=self.args.max_grad_norm,
+            )
+            privacy_engine.attach(optimizer)
+            assert self.args.virtual_batch_size % self.args.local_bs == 0 # VIRTUAL_BATCH_SIZE should be divisible by BATCH_SIZE
+            virtual_batch_rate = int(self.args.virtual_batch_size / self.args.local_bs)
+        #############
 
         for iter in range(self.args.local_ep):
             batch_loss = []
@@ -73,13 +90,32 @@ class LocalUpdate(object):
                 log_probs = model(images)
                 loss = self.criterion(log_probs, labels)
                 loss.backward()
-                optimizer.step()
 
-                if self.args.verbose and (batch_idx % 10 == 0):
-                    print('| Global Round : {} | Local Epoch : {} | [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                        global_round, iter, batch_idx * len(images),
-                        len(self.trainloader.dataset),
-                        100. * batch_idx / len(self.trainloader), loss.item()))
+                ### Moh ####
+                if self.args.withDP:
+                # optimizer.step()
+                # take a real optimizer step after N_VIRTUAL_STEP steps t
+                    if ((batch_idx + 1) % virtual_batch_rate == 0) or ((batch_idx + 1) == len(self.trainloader)):
+                        optimizer.step()
+                    else:
+                        optimizer.virtual_step() # take a virtual step
+                else:
+                    optimizer.step()
+                #############
+
+                if self.args.verbose and (batch_idx % self.args.verbose == 0):
+                    if self.args.withDP:
+                        epsilon, best_alpha = optimizer.privacy_engine.get_privacy_spent(self.args.delta)
+                        print('| Global Round : {} | User ID : {} | Local Epoch : {} | [{}/{} ({:.0f}%)]\tLoss: {:.6f} | ε = {:.2f} | α = {:.2f} | δ = {}'.format(
+                            global_round+1, self.idx, iter, batch_idx * len(images),
+                            len(self.trainloader.dataset),
+                            100. * batch_idx / len(self.trainloader), loss.item(), 
+                            epsilon, best_alpha, self.args.delta))
+                    else:
+                        print('| Global Round : {} | User ID : {} | Local Epoch : {} | [{}/{} ({:.0f}%)]\tLoss: {:.6f} '.format(
+                            global_round+1, self.idx, iter, batch_idx * len(images),
+                            len(self.trainloader.dataset),
+                            100. * batch_idx / len(self.trainloader), loss.item()))  
                 self.logger.add_scalar('loss', loss.item())
                 batch_loss.append(loss.item())
             epoch_loss.append(sum(batch_loss)/len(batch_loss))

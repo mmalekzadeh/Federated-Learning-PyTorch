@@ -18,6 +18,10 @@ from update import LocalUpdate, test_inference
 from models import MLP, CNNMnist, CNNFashion_Mnist, CNNCifar
 from utils import get_dataset, average_weights, exp_details
 
+#### Moh ####
+from opacus.dp_model_inspector import DPModelInspector
+from opacus.utils import module_modification
+
 
 if __name__ == '__main__':
     start_time = time.time()
@@ -44,7 +48,7 @@ if __name__ == '__main__':
         elif args.dataset == 'fmnist':
             global_model = CNNFashion_Mnist(args=args)
         elif args.dataset == 'cifar':
-            global_model = CNNCifar(args=args)
+            global_model = CNNCifar(args=args)  
 
     elif args.model == 'mlp':
         # Multi-layer preceptron
@@ -56,6 +60,22 @@ if __name__ == '__main__':
                                dim_out=args.num_classes)
     else:
         exit('Error: unrecognized model')
+
+    
+    ### Moh ###
+    if args.withDP:
+        try:
+            inspector = DPModelInspector()
+            inspector.validate(global_model)
+            print("Model's already Valid!\n")
+        except:
+            global_model = module_modification.convert_batchnorm_modules(global_model)
+            inspector = DPModelInspector()
+            print(f"Is the model valid? {inspector.validate(global_model)}")
+            print("Model is convereted to be Valid!\n")
+    ###########  
+
+    
 
     # Set the model to train and send it to device.
     global_model.to(device)
@@ -72,6 +92,7 @@ if __name__ == '__main__':
     print_every = 2
     val_loss_pre, counter = 0, 0
 
+    
     for epoch in tqdm(range(args.epochs)):
         local_weights, local_losses = [], []
         print(f'\n | Global Training Round : {epoch+1} |\n')
@@ -81,7 +102,7 @@ if __name__ == '__main__':
         idxs_users = np.random.choice(range(args.num_users), m, replace=False)
 
         for idx in idxs_users:
-            local_model = LocalUpdate(args=args, dataset=train_dataset,
+            local_model = LocalUpdate(args=args, dataset=train_dataset, idx=idx,
                                       idxs=user_groups[idx], logger=logger)
             w, loss = local_model.update_weights(
                 model=copy.deepcopy(global_model), global_round=epoch)
@@ -101,7 +122,7 @@ if __name__ == '__main__':
         list_acc, list_loss = [], []
         global_model.eval()
         for c in range(args.num_users):
-            local_model = LocalUpdate(args=args, dataset=train_dataset,
+            local_model = LocalUpdate(args=args, dataset=train_dataset, idx=idx,
                                       idxs=user_groups[idx], logger=logger)
             acc, loss = local_model.inference(model=global_model)
             list_acc.append(acc)
@@ -155,3 +176,5 @@ if __name__ == '__main__':
     # plt.savefig('../save/fed_{}_{}_{}_C[{}]_iid[{}]_E[{}]_B[{}]_acc.png'.
     #             format(args.dataset, args.model, args.epochs, args.frac,
     #                    args.iid, args.local_ep, args.local_bs))
+
+#### python src/federated_main.py --model=cnn --dataset=mnist  --iid=1  --withDP=1  --max_grad_norm=1.5 --noise_multiplier=1.1 --delta=5e-4 --virtual_batch_size=32 --local_bs=32 --num_users=30  --local_ep=10  --epochs=5 --verbose=20

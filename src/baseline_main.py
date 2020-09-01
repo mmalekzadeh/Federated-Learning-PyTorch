@@ -58,7 +58,7 @@ if __name__ == '__main__':
         optimizer = torch.optim.Adam(global_model.parameters(), lr=args.lr,
                                      weight_decay=1e-4)
 
-    trainloader = DataLoader(train_dataset, batch_size=64, shuffle=True)
+    trainloader = DataLoader(train_dataset, batch_size=args.local_bs, shuffle=True)
     criterion = torch.nn.NLLLoss().to(device)
     epoch_loss = []
 
@@ -74,7 +74,7 @@ if __name__ == '__main__':
             loss.backward()
             optimizer.step()
 
-            if batch_idx % 50 == 0:
+            if batch_idx % args.verbose == 0:
                 print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
                     epoch+1, batch_idx * len(images), len(trainloader.dataset),
                     100. * batch_idx / len(trainloader), loss.item()))
@@ -84,13 +84,13 @@ if __name__ == '__main__':
         print('\nTrain loss:', loss_avg)
         epoch_loss.append(loss_avg)
 
-    # Plot loss
-    plt.figure()
-    plt.plot(range(len(epoch_loss)), epoch_loss)
-    plt.xlabel('epochs')
-    plt.ylabel('Train loss')
-    plt.savefig('../save/nn_{}_{}_{}.png'.format(args.dataset, args.model,
-                                                 args.epochs))
+    # # Plot loss
+    # plt.figure()
+    # plt.plot(range(len(epoch_loss)), epoch_loss)
+    # plt.xlabel('epochs')
+    # plt.ylabel('Train loss')
+    # plt.savefig('../save/nn_{}_{}_{}.png'.format(args.dataset, args.model,
+    #                                              args.epochs))
 
     # testing
     test_acc, test_loss = test_inference(args, global_model, test_dataset)
